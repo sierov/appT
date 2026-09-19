@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Облік</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F3F4F2; --surface:#FFFFFF; --surface-2:#EEF0EE; --ink:#14161B; --ink-soft:#5B6169;
+    --line:#E1E3E0; --accent:#2F5FDE; --accent-ink:#FFFFFF; --income:#1E9E6B; --expense:#D6455A;
+    --radius:14px; --accent-soft:#E8EDFC;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  :root:not([data-theme="light"]){
+    @media (prefers-color-scheme: dark){
+      --bg:#131417; --surface:#1C1E23; --surface-2:#24262C; --ink:#EDEEF0; --ink-soft:#9AA0AA;
+      --line:#2E3138; --accent:#5B84F2; --accent-ink:#0E1117; --income:#3FC98E; --expense:#F0677D;
+      --accent-soft:#1E2740;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131417; --surface:#1C1E23; --surface-2:#24262C; --ink:#EDEEF0; --ink-soft:#9AA0AA;
+    --line:#2E3138; --accent:#5B84F2; --accent-ink:#0E1117; --income:#3FC98E; --expense:#F0677D;
+    --accent-soft:#1E2740;
+  }
+  html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
+  *{box-sizing:border-box;}
+  body{
+    margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family:'Manrope',system-ui,sans-serif; -webkit-tap-highlight-color:transparent;
+  }
+  #app{display:flex; flex-direction:column; min-height:100vh;}
+  header.topbar{
+    position:sticky; top:0; z-index:20; background:var(--bg);
+    padding:calc(14px + env(safe-area-inset-top,0px)) 18px 10px;
+    display:flex; align-items:center; gap:10px; border-bottom:1px solid transparent;
+  }
+  header.topbar.scrolled{border-bottom-color:var(--line);}
+  .back-btn{
+    width:34px; height:34px; border-radius:10px; border:1px solid var(--line); background:var(--surface);
+    color:var(--ink); display:flex; align-items:center; justify-content:center; font-size:18px; flex:none;
+  }
+  h1.page-title{font-size:20px; font-weight:800; margin:0; letter-spacing:-0.01em;}
+  .sync-dot{width:7px; height:7px; border-radius:50%; background:var(--ink-soft); opacity:.4; margin-left:auto; flex:none; transition:.2s;}
+  .sync-dot.busy{background:var(--accent); opacity:1;}
+  main{flex:1; padding:6px 18px calc(96px + env(safe-area-inset-bottom,0px)); max-width:640px; width:100%; margin:0 auto;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px;}
+  .stat-card{padding:18px 16px;}
+  .stat-label{font-size:13px; color:var(--ink-soft); font-weight:600; margin:0 0 6px;}
+  .stat-value{font-size:26px; font-weight:800; letter-spacing:-0.02em; margin:0;}
+  .stat-value.pos{color:var(--income);}
+  .stat-value.neg{color:var(--expense);}
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .section-heading{font-size:13px; font-weight:700; text-transform:none; color:var(--ink-soft); margin:22px 2px 10px;}
+  .row{display:flex; align-items:center; justify-content:space-between; padding:12px 4px; border-bottom:1px solid var(--line);}
+  .row:last-child{border-bottom:none;}
+  .list-card{padding:4px 12px;}
+  .list-title{font-weight:700; font-size:15px;}
+  .list-sub{font-size:13px; color:var(--ink-soft); margin-top:2px;}
+  .amount{font-weight:800; font-size:15px; white-space:nowrap;}
+  .amount.income{color:var(--income);}
+  .amount.expense{color:var(--expense);}
+  .empty{text-align:center; padding:48px 16px; color:var(--ink-soft);}
+  .empty .big{font-size:34px; margin-bottom:8px;}
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    background:var(--accent); color:var(--accent-ink); border:none; border-radius:12px;
+    padding:13px 18px; font-weight:700; font-size:15px; font-family:inherit; width:100%; cursor:pointer;
+  }
+  .btn.secondary{background:var(--surface-2); color:var(--ink); border:1px solid var(--line);}
+  .btn.danger{background:transparent; color:var(--expense); border:1px solid var(--line);}
+  .fab{
+    position:fixed; right:18px; bottom:calc(88px + env(safe-area-inset-bottom,0px)); z-index:25;
+    width:54px; height:54px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+    border:none; font-size:26px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    box-shadow:0 6px 18px rgba(0,0,0,.18);
+  }
+  label{display:block; font-size:13px; font-weight:600; color:var(--ink-soft); margin:14px 0 6px;}
+  label:first-child{margin-top:0;}
+  input[type=text], input[type=tel], input[type=number], input[type=date], textarea, select{
+    width:100%; padding:12px 13px; border-radius:11px; border:1px solid var(--line); background:var(--surface-2);
+    color:var(--ink); font-size:15px; font-family:inherit;
+  }
+  textarea{resize:vertical; min-height:70px;}
+  input:focus, textarea:focus, select:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .avatar{
+    width:44px; height:44px; border-radius:50%; background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; flex:none;
+  }
+  .avatar-lg{width:60px; height:60px; font-size:21px; margin:0 auto;}
+  .client-row{display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;}
+  .client-row:last-child{border-bottom:none;}
+  nav.bottomnav{
+    position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--surface); border-top:1px solid var(--line);
+    display:flex; padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
+  }
+  nav.bottomnav button{
+    flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:6px 2px; color:var(--ink-soft); font-family:inherit; cursor:pointer;
+  }
+  nav.bottomnav button .ic{font-size:20px; line-height:1;}
+  nav.bottomnav button .lb{font-size:10.5px; font-weight:700;}
+  nav.bottomnav button.active{color:var(--accent);}
+  .seg{display:flex; background:var(--surface-2); border-radius:11px; padding:3px; margin-bottom:14px; border:1px solid var(--line);}
+  .seg button{flex:1; border:none; background:none; padding:9px 4px; border-radius:9px; font-family:inherit; font-weight:700; font-size:13px; color:var(--ink-soft); cursor:pointer;}
+  .seg button.active{background:var(--accent); color:var(--accent-ink);}
+  .swatch-row{display:flex; gap:10px; margin-top:4px;}
+  .swatch{width:36px; height:36px; border-radius:50%; border:2px solid transparent; cursor:pointer;}
+  .swatch.selected{border-color:var(--ink);}
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; padding:12px 4px;}
+  .switch{position:relative; width:46px; height:27px; flex:none;}
+  .switch input{opacity:0; width:0; height:0;}
+  .slider{position:absolute; inset:0; background:var(--surface-2); border:1px solid var(--line); border-radius:20px; transition:.15s; cursor:pointer;}
+  .slider:before{content:""; position:absolute; height:19px; width:19px; left:3px; top:3px; background:white; border-radius:50%; transition:.15s;}
+  .switch input:checked + .slider{background:var(--accent); border-color:var(--accent);}
+  .switch input:checked + .slider:before{transform:translateX(19px);}
+  .toast{
+    position:fixed; left:50%; bottom:calc(96px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%);
+    background:var(--ink); color:var(--bg); padding:11px 18px; border-radius:11px; font-size:14px; font-weight:600;
+    z-index:60; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+  .divider-total{display:flex; justify-content:space-between; align-items:center; padding-top:14px; margin-top:4px; border-top:1px dashed var(--line);}
+  .divider-total .v{font-size:19px; font-weight:800;}
+  .about-p{font-size:14px; line-height:1.6; color:var(--ink-soft); margin:0 0 10px;}
+  a.tel-link{color:var(--accent); text-decoration:none; font-weight:700;}
+  .discount-box{background:var(--accent-soft); border:1px solid var(--line); border-radius:11px; padding:12px 14px; margin-top:14px;}
+  .discount-box .toggle-row{padding:0;}
+  .discount-box label.switch{margin:0;}
+  .note-block{background:var(--surface-2); border-radius:11px; padding:12px 14px; font-size:14px; color:var(--ink-soft); line-height:1.5;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Telegram Mini App integration ---------- */
+let TG = null;
+try{
+  if(window.Telegram && window.Telegram.WebApp){
+    TG = window.Telegram.WebApp;
+    TG.ready(); TG.expand();
+    const tp = TG.themeParams || {};
+    const map = {
+      bg_color:'--bg', secondary_bg_color:'--surface-2', section_bg_color:'--surface',
+      text_color:'--ink', hint_color:'--ink-soft', button_color:'--accent',
+      button_text_color:'--accent-ink', section_separator_color:'--line'
+    };
+    Object.keys(map).forEach(k=>{ if(tp[k]) document.documentElement.style.setProperty(map[k], tp[k]); });
+    if(TG.setHeaderColor) try{ TG.setHeaderColor(tp.bg_color ? tp.bg_color : 'bg_color'); }catch(e){}
+    if(TG.setBackgroundColor && tp.bg_color) try{ TG.setBackgroundColor(tp.bg_color); }catch(e){}
+    document.documentElement.setAttribute('data-theme', TG.colorScheme || '');
+  }
+}catch(e){}
+function haptic(kind){ try{ if(TG && TG.HapticFeedback) TG.HapticFeedback.impactOccurred(kind||'light'); }catch(e){} }
+const hasCloud = !!(TG && TG.CloudStorage);
+
+/* ---------- Cloud/local storage (auto-save, chunked for CloudStorage's 4096-char limit) ---------- */
+function csCall(method, ...args){
+  return new Promise((resolve, reject)=>{
+    TG.CloudStorage[method](...args, (err, res)=> err ? reject(err) : resolve(res));
+  });
+}
+async function cloudSave(name, obj){
+  const str = JSON.stringify(obj);
+  if(!hasCloud){ localStorage.setItem('local_'+name, str); return; }
+  const CHUNK = 3500;
+  const chunks = []; for(let i=0;i<str.length;i+=CHUNK) chunks.push(str.slice(i,i+CHUNK));
+  const prevMetaRaw = await csCall('getItem', name+'_meta').catch(()=>null);
+  const prevCount = prevMetaRaw ? parseInt(prevMetaRaw)||0 : 0;
+  for(let i=0;i<chunks.length;i++) await csCall('setItem', name+'_'+i, chunks[i]);
+  for(let i=chunks.length;i<prevCount;i++) await csCall('removeItem', name+'_'+i).catch(()=>{});
+  await csCall('setItem', name+'_meta', String(chunks.length));
+}
+async function cloudLoad(name, fallback){
+  if(!hasCloud){ try{ const v = localStorage.getItem('local_'+name); return v?JSON.parse(v):fallback; }catch(e){ return fallback; } }
+  try{
+    const meta = await csCall('getItem', name+'_meta');
+    const count = meta ? parseInt(meta)||0 : 0;
+    if(!count) return fallback;
+    let str = '';
+    for(let i=0;i<count;i++){ str += (await csCall('getItem', name+'_'+i)) || ''; }
+    return str ? JSON.parse(str) : fallback;
+  }catch(e){ return fallback; }
+}
+function setSyncBusy(on){ const d = document.getElementById('syncDot'); if(d) d.classList.toggle('busy', on); }
+
+let state = { clients:[], records:[], expenses:[], settings:{theme:'system', accent:'#2F5FDE'} };
+let saveQueue = Promise.resolve();
+function persist(part){
+  const map = {clients:'clients', records:'records', expenses:'expenses', settings:'settings'};
+  const key = map[part];
+  setSyncBusy(true);
+  saveQueue = saveQueue.then(()=>cloudSave(key, state[key])).then(()=>setSyncBusy(false)).catch(()=>{ setSyncBusy(false); toast('Не вдалося синхронізувати дані'); });
+}
+async function bootData(){
+  const [clients, records, expenses, settings] = await Promise.all([
+    cloudLoad('clients', []), cloudLoad('records', []), cloudLoad('expenses', []), cloudLoad('settings', {theme:'system', accent:'#2F5FDE'})
+  ]);
+  state = {clients, records, expenses, settings};
+  applyTheme(); render();
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+/* ---------- theme ---------- */
+function applyTheme(){
+  const t = state.settings.theme;
+  if(!TG){ document.documentElement.setAttribute('data-theme', t==='system' ? '' : t); }
+  document.documentElement.style.setProperty('--accent', state.settings.accent || '#2F5FDE');
+}
+
+/* ---------- nav / view stack ---------- */
+let nav = { tab:'home', view:'home', params:{} };
+function go(view, params){ nav.view = view; nav.params = params||{}; render(); window.scrollTo(0,0); }
+function setTab(tab){ haptic('light'); nav.tab = tab; go(tab, {}); }
+
+/* ---------- helpers ---------- */
+function money(n){ n = Number(n)||0; return n.toLocaleString('uk-UA', {maximumFractionDigits:0}) + ' ₴'; }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDate(iso){ if(!iso) return '—'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('uk-UA', {day:'numeric', month:'long', year:'numeric'}); }
+function fmtDateShort(iso){ if(!iso) return '—'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}); }
+function monthKey(iso){ return (iso||'').slice(0,7); }
+function initials(name){ if(!name) return '?'; const parts = name.trim().split(/\s+/); return ((parts[0]?.[0]||'') + (parts[1]?.[0]||'')).toUpperCase() || '?'; }
+let toastTimer;
+function toast(msg){ const el = document.getElementById('toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(()=>el.classList.remove('show'), 2200); }
+function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- автознижки ---------- */
+const VISIT_EVERY = 10;   // кожне 10-те відвідування
+const BDAY_WINDOW = 3;    // день народження ± 3 дні
+function discountSettings(){
+  const s = state.settings || {};
+  const clamp = v => Math.min(100, Math.max(0, Number(v)||0));
+  return { visit: clamp(s.discountVisit), birthday: clamp(s.discountBirthday) };
+}
+function phoneKey(p){ const d = (p||'').replace(/\D/g,''); return d.length>=9 ? d.slice(-9) : d; }
+function nameKey(n){ return (n||'').trim().toLowerCase(); }
+function recordsOfClient(c){
+  const pk = phoneKey(c.phone), nk = nameKey(c.fio);
+  return state.records.filter(r=>{
+    if(r.clientId) return r.clientId===c.id;
+    const rp = phoneKey(r.phone);
+    if(pk && rp) return pk===rp;
+    return !rp && nk && nameKey(r.fio)===nk;
+  });
+}
+function findClientFor(fio, phone, prefillId){
+  const pk = phoneKey(phone), nk = nameKey(fio);
+  if(prefillId){
+    const p = state.clients.find(c=>c.id===prefillId);
+    if(p && ((pk && phoneKey(p.phone)===pk) || (nk && nameKey(p.fio)===nk))) return p;
+  }
+  if(pk){ const m = state.clients.find(c=>phoneKey(c.phone)===pk); if(m) return m; }
+  if(nk){ const m = state.clients.find(c=>nameKey(c.fio)===nk); if(m) return m; }
+  return null;
+}
+function isLeap(y){ return (y%4===0 && y%100!==0) || y%400===0; }
+// різниця в днях між датою запису та найближчим днем народження (може бути від’ємною)
+function birthdayDiff(dob, dateISO){
+  if(!dob || !dateISO) return null;
+  const [, bm, bd] = dob.split('-').map(Number);
+  const [y, m, d] = dateISO.split('-').map(Number);
+  if(!bm || !bd || !y || !m || !d) return null;
+  const target = Date.UTC(y, m-1, d);
+  let best = null;
+  for(let yy=y-1; yy<=y+1; yy++){
+    const day = (bm===2 && bd===29 && !isLeap(yy)) ? 28 : bd;
+    const diff = Math.round((target - Date.UTC(yy, bm-1, day)) / 86400000);
+    if(best===null || Math.abs(diff)<Math.abs(best)) best = diff;
+  }
+  return best;
+}
+function birthdayActive(client, dateISO){
+  const diff = birthdayDiff(client && client.dob, dateISO);
+  return diff!==null && Math.abs(diff)<=BDAY_WINDOW;
+}
+// повертає {pct, reason, label}; якщо діють обидві знижки — береться більша
+function calcDiscount(client, dateISO){
+  const none = {pct:0, reason:null, label:''};
+  if(!client) return none;
+  const cfg = discountSettings();
+  const options = [];
+  if(cfg.visit>0){
+    const visitNo = recordsOfClient(client).length + 1;
+    if(visitNo % VISIT_EVERY === 0) options.push({pct:cfg.visit, reason:'visit', label:visitNo+'-й візит'});
+  }
+  if(cfg.birthday>0 && birthdayActive(client, dateISO)){
+    options.push({pct:cfg.birthday, reason:'birthday', label:'День народження'});
+  }
+  if(!options.length) return none;
+  options.sort((a,b)=>b.pct-a.pct);
+  return options[0];
+}
+function applyPct(price, pct){ return Math.round(price * (100 - pct) / 100); }
+function discTag(r){ return r.discountPct ? ' · знижка −'+r.discountPct+'%' : ''; }
+
+/* ================= RENDER ROOT ================= */
+function render(){
+  const app = document.getElementById('app');
+  const titles = {
+    home:'Головний екран', clients:'Клієнти', clientAdd:'Новий клієнт', clientProfile:'Профіль',
+    records:'Записи', recordAdd:'Новий запис', expenses:'Витрати', expenseAdd:'Нова витрата',
+    stats:'Статистика', settings:'Налаштування'
+  };
+  const showBack = !['home','clients','records','expenses','stats','settings'].includes(nav.view);
+
+  app.innerHTML = `
+    <header class="topbar" id="topbar">
+      ${showBack ? `<button class="back-btn" onclick="goBack()">‹</button>` : ''}
+      <h1 class="page-title">${titles[nav.view] || ''}</h1>
+      <div class="sync-dot" id="syncDot" title="Синхронізація"></div>
+    </header>
+    <main id="main"></main>
+    ${renderFab()}
+    <nav class="bottomnav">
+      ${navBtn('home','⌂','Головна')}
+      ${navBtn('clients','☺','Клієнти')}
+      ${navBtn('records','▤','Записи')}
+      ${navBtn('expenses','◈','Витрати')}
+      ${navBtn('stats','▲','Статистика')}
+      ${navBtn('settings','⚙','Налашт.')}
+    </nav>
+  `;
+  const views = {
+    home: renderHome, clients: renderClients, clientAdd: renderClientAdd, clientProfile: renderClientProfile,
+    records: renderRecords, recordAdd: renderRecordAdd, expenses: renderExpenses, expenseAdd: renderExpenseAdd,
+    stats: renderStats, settings: renderSettings
+  };
+  document.getElementById('main').innerHTML = (views[nav.view]||renderHome)();
+  if(nav.view==='recordAdd') updateRecordDiscount();
+  const topbar = document.getElementById('topbar');
+  window.onscroll = ()=>{ topbar.classList.toggle('scrolled', window.scrollY > 4); };
+
+  if(TG){
+    try{
+      if(showBack){ TG.BackButton.show(); TG.BackButton.onClick(goBack); }
+      else { TG.BackButton.hide(); }
+    }catch(e){}
+  }
+}
+function goBack(){
+  if(nav.view==='clientProfile' && nav.params.edit){ go('clientProfile',{id:nav.params.id}); return; }
+  const target = nav.tab==='clientProfile' ? 'home' : nav.tab;
+  go(target, {});
+}
+function navBtn(id, icon, label){
+  const active = nav.tab===id ? 'active' : '';
+  return `<button class="${active}" onclick="setTab('${id}')"><span class="ic">${icon}</span><span class="lb">${label}</span></button>`;
+}
+function renderFab(){
+  if(nav.view==='clients') return `<button class="fab" onclick="go('clientAdd')">+</button>`;
+  if(nav.view==='records') return `<button class="fab" onclick="go('recordAdd')">+</button>`;
+  if(nav.view==='expenses') return `<button class="fab" onclick="go('expenseAdd')">+</button>`;
+  if(nav.view==='clientProfile' && !nav.params.edit) return `<button class="fab" onclick="go('recordAdd', {clientId:'${nav.params.id}'})">+</button>`;
+  return '';
+}
+
+/* ================= ГОЛОВНИЙ ЕКРАН ================= */
+function renderHome(){
+  const mk = monthKey(todayISO());
+  const gross = state.records.filter(r=>monthKey(r.date)===mk).reduce((s,r)=>s+Number(r.price||0),0);
+  const exp = state.expenses.filter(e=>monthKey(e.date)===mk).reduce((s,e)=>s+Number(e.total||0),0);
+  const net = gross - exp;
+  const events = [
+    ...state.records.map(r=>({type:'income', date:r.date, title:r.fio||'Запис', sub:'Запис'+discTag(r), amount:Number(r.price||0)})),
+    ...state.expenses.map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', sub:'Витрата · '+ (e.qty||1)+' шт.', amount:Number(e.total||0)}))
+  ].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+
+  return `
+    <div class="stat-grid">
+      <div class="card stat-card"><p class="stat-label">Валовий прибуток за місяць</p><p class="stat-value">${money(gross)}</p></div>
+      <div class="card stat-card"><p class="stat-label">Чистий прибуток за місяць</p><p class="stat-value ${net>=0?'pos':'neg'}">${money(net)}</p></div>
+    </div>
+    <div class="card stat-card"><p class="stat-label">Витрати за місяць</p><p class="stat-value neg">${money(exp)}</p></div>
+
+    <p class="section-heading">Історія доходів і витрат</p>
+    ${events.length ? `<div class="card list-card">${events.map(ev=>`
+      <div class="row">
+        <div><div class="list-title">${esc(ev.title)}</div><div class="list-sub">${ev.sub} · ${fmtDateShort(ev.date)}</div></div>
+        <div class="amount ${ev.type==='income'?'income':'expense'}">${ev.type==='income'?'+':'−'}${money(ev.amount)}</div>
+      </div>`).join('')}</div>`
+    : emptyState('◌','Поки що немає записів', 'Додайте запис або витрату — історія з’явиться тут')}
+  `;
+}
+
+/* ================= КЛІЄНТИ ================= */
+function renderClients(){
+  const list = [...state.clients].sort((a,b)=>(a.fio||'').localeCompare(b.fio||'','uk'));
+  if(!list.length) return emptyState('☺','Список клієнтів порожній', 'Натисніть «+», щоб додати першого клієнта');
+  return `<div class="card list-card">${list.map(c=>`
+    <div class="client-row" onclick="go('clientProfile',{id:'${c.id}'})">
+      <div class="avatar">${initials(c.fio)}</div>
+      <div style="flex:1;">
+        <div class="list-title">${esc(c.fio)||'Без імені'}</div>
+        <div class="list-sub">${esc(c.phone)||'—'}</div>
+      </div>
+      <span style="color:var(--ink-soft);">›</span>
+    </div>`).join('')}</div>`;
+}
+function renderClientAdd(){
+  return `
+    <div class="card">
+      <label>ПІБ</label>
+      <input type="text" id="f_fio" placeholder="Іванова Ганна">
+      <label>Дата народження</label>
+      <input type="date" id="f_dob">
+      <label>Номер телефону</label>
+      <input type="tel" id="f_phone" placeholder="+380 00 000 00 00">
+    </div>
+    <button class="btn" onclick="saveClient()">Зберегти клієнта</button>
+  `;
+}
+function saveClient(){
+  const fio = document.getElementById('f_fio').value.trim();
+  if(!fio){ toast('Вкажіть ПІБ'); return; }
+  const c = { id:uid(), fio, dob:document.getElementById('f_dob').value, phone:document.getElementById('f_phone').value.trim(), note:'' };
+  state.clients.push(c); persist('clients');
+  haptic('medium'); toast('Клієнта додано'); nav.tab='clients'; go('clients');
+}
+
+function renderClientProfile(){
+  const c = state.clients.find(x=>x.id===nav.params.id);
+  if(!c) return emptyState('☺','Клієнта не знайдено','');
+  const editing = nav.params.edit;
+  const clientRecords = recordsOfClient(c).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+  const dcfg = discountSettings();
+  const nextVisit = (Math.floor(clientRecords.length / VISIT_EVERY) + 1) * VISIT_EVERY;
+
+  if(editing){
+    return `
+      <div class="card">
+        <label>ПІБ</label>
+        <input type="text" id="e_fio" value="${esc(c.fio)}">
+        <label>Дата народження</label>
+        <input type="date" id="e_dob" value="${c.dob||''}">
+        <label>Номер телефону</label>
+        <input type="tel" id="e_phone" value="${esc(c.phone)}">
+        <label>Примітка</label>
+        <textarea id="e_note" placeholder="Нотатка про клієнта">${esc(c.note)}</textarea>
+      </div>
+      <button class="btn" onclick="saveClientEdit('${c.id}')">Зберегти зміни</button>
+      <button class="btn danger" style="margin-top:10px" onclick="deleteClient('${c.id}')">Видалити клієнта</button>
+    `;
+  }
+
+  return `
+    <div class="card" style="text-align:center; padding:24px 16px;">
+      <div class="avatar avatar-lg">${initials(c.fio)}</div>
+      <div style="height:10px"></div>
+      <div style="font-weight:800; font-size:19px;">${esc(c.fio)||'Без імені'}</div>
+      ${c.phone ? `<a class="tel-link" href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}
+    </div>
+    <div class="card">
+      <div class="row"><span>День народження</span><span>${c.dob?fmtDate(c.dob):'не вказана'}</span></div>
+      <div class="row"><span>Номер телефону</span><span>${esc(c.phone)||'—'}</span></div>
+      <div class="row"><span>Візитів</span><span>${clientRecords.length}</span></div>
+      ${dcfg.visit>0 ? `<div class="row"><span>Знижка за візит</span><span>${nextVisit}-й візит · −${dcfg.visit}%</span></div>` : ''}
+      ${dcfg.birthday>0 && birthdayActive(c, todayISO()) ? `<div class="row"><span>Знижка на день народження</span><span>діє зараз · −${dcfg.birthday}%</span></div>` : ''}
+    </div>
+    ${c.note ? `<p class="section-heading">Примітка</p><div class="note-block">${esc(c.note)}</div>` : ''}
+    <button class="btn secondary" onclick="go('clientProfile',{id:'${c.id}', edit:true})">Редагувати профіль</button>
+
+    <p class="section-heading">Історія записів</p>
+    ${clientRecords.length ? `<div class="card list-card">${clientRecords.map(r=>`
+      <div class="row"><div><div class="list-title">${fmtDate(r.date)}</div>${r.discountPct ? `<div class="list-sub">Знижка −${r.discountPct}% · без знижки ${money(r.basePrice)}</div>` : ''}</div><div class="amount income">${money(r.price)}</div></div>
+    `).join('')}</div>` : `<div class="card"><p class="about-p" style="margin:0;">Записів поки немає</p></div>`}
+  `;
+}
+function saveClientEdit(id){
+  const c = state.clients.find(x=>x.id===id); if(!c) return;
+  c.fio = document.getElementById('e_fio').value.trim() || c.fio;
+  c.dob = document.getElementById('e_dob').value;
+  c.phone = document.getElementById('e_phone').value.trim();
+  c.note = document.getElementById('e_note').value.trim();
+  persist('clients'); toast('Профіль оновлено'); go('clientProfile',{id});
+}
+function deleteClient(id){
+  if(!confirm('Видалити клієнта без можливості відновлення?')) return;
+  state.clients = state.clients.filter(x=>x.id!==id); persist('clients');
+  toast('Клієнта видалено'); nav.tab='clients'; go('clients');
+}
+
+/* ================= ЗАПИСИ ================= */
+function renderRecords(){
+  const list = [...state.records].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!list.length) return emptyState('▤','Записів поки немає','Натисніть «+», щоб додати запис');
+  return `<div class="card list-card">${list.map(r=>`
+    <div class="row">
+      <div><div class="list-title">${esc(r.fio)||'Без імені'}</div><div class="list-sub">${esc(r.phone)||'—'} · ${fmtDate(r.date)}${discTag(r)}</div></div>
+      <div class="amount income">${money(r.price)}</div>
+    </div>`).join('')}</div>`;
+}
+let recordDiscountOff = false;
+function recordFormDiscount(){
+  const fio = document.getElementById('r_fio').value;
+  const phone = document.getElementById('r_phone').value;
+  const date = document.getElementById('r_date').value || todayISO();
+  const client = findClientFor(fio, phone, nav.params.clientId);
+  return { client, date, d: calcDiscount(client, date) };
+}
+function updateRecordDiscount(){
+  const box = document.getElementById('r_discount'); if(!box) return;
+  const { client, d } = recordFormDiscount();
+  if(!d.pct){ box.innerHTML = ''; return; }
+  const base = Number(document.getElementById('r_price').value) || 0;
+  const on = !recordDiscountOff;
+  box.innerHTML = `
+    <div class="discount-box">
+      <div class="toggle-row">
+        <div><div class="list-title">Знижка −${d.pct}%</div><div class="list-sub">${d.label} · ${esc(client.fio)}</div></div>
+        <label class="switch"><input type="checkbox" ${on?'checked':''} onchange="toggleRecordDiscount(this.checked)"><span class="slider"></span></label>
+      </div>
+      <div class="divider-total"><span>До сплати</span><span class="v">${money(on ? applyPct(base, d.pct) : base)}</span></div>
+    </div>`;
+}
+function toggleRecordDiscount(on){ recordDiscountOff = !on; updateRecordDiscount(); }
+function renderRecordAdd(){
+  recordDiscountOff = false;
+  const prefillClient = nav.params.clientId ? state.clients.find(c=>c.id===nav.params.clientId) : null;
+  return `
+    <div class="card">
+      <label>ПІБ</label>
+      <input type="text" id="r_fio" value="${prefillClient?esc(prefillClient.fio):''}" placeholder="Іванова Ганна" oninput="updateRecordDiscount()">
+      <label>Номер телефону</label>
+      <input type="tel" id="r_phone" value="${prefillClient?esc(prefillClient.phone):''}" placeholder="+380 00 000 00 00" oninput="updateRecordDiscount()">
+      <label>Дата запису</label>
+      <input type="date" id="r_date" value="${todayISO()}" oninput="updateRecordDiscount()">
+      <label>Ціна</label>
+      <input type="number" id="r_price" inputmode="decimal" placeholder="0" oninput="updateRecordDiscount()">
+      <div id="r_discount"></div>
+    </div>
+    <button class="btn" onclick="saveRecord('${prefillClient?prefillClient.id:''}')">Зберегти запис</button>
+  `;
+}
+function saveRecord(clientId){
+  const fio = document.getElementById('r_fio').value.trim();
+  const price = Number(document.getElementById('r_price').value)||0;
+  if(!fio){ toast('Вкажіть ПІБ'); return; }
+  const { client, date, d } = recordFormDiscount();
+  const useDisc = d.pct>0 && !recordDiscountOff;
+  const rec = { id:uid(), fio, phone:document.getElementById('r_phone').value.trim(), date, price: useDisc ? applyPct(price, d.pct) : price, clientId: client ? client.id : null };
+  if(useDisc){ rec.basePrice = price; rec.discountPct = d.pct; rec.discountReason = d.reason; }
+  state.records.push(rec);
+  persist('records'); haptic('medium'); toast(useDisc ? 'Запис додано · знижка −'+d.pct+'%' : 'Запис додано');
+  if(clientId) go('clientProfile',{id:clientId}); else { nav.tab='records'; go('records'); }
+}
+
+/* ================= ВИТРАТИ ================= */
+function renderExpenses(){
+  const list = [...state.expenses].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!list.length) return emptyState('◈','Витрат поки немає','Натисніть «+», щоб додати витрату');
+  return `<div class="card list-card">${list.map(e=>`
+    <div class="row">
+      <div><div class="list-title">${esc(e.shop)||'Магазин'}</div><div class="list-sub">${e.qty||1} шт. · ${fmtDate(e.date)}</div></div>
+      <div class="amount expense">${money(e.total)}</div>
+    </div>`).join('')}</div>`;
+}
+function renderExpenseAdd(){
+  return `
+    <div class="card">
+      <label>Магазин</label>
+      <input type="text" id="x_shop" placeholder="Назва магазину">
+      <label>Ціна за одиницю</label>
+      <input type="number" id="x_price" inputmode="decimal" placeholder="0" oninput="updateExpenseTotal()">
+      <label>Кількість</label>
+      <input type="number" id="x_qty" inputmode="decimal" value="1" oninput="updateExpenseTotal()">
+      <label>Дата</label>
+      <input type="date" id="x_date" value="${todayISO()}">
+      <div class="divider-total"><span>Підсумкова сума</span><span class="v" id="x_total">0 ₴</span></div>
+    </div>
+    <button class="btn" onclick="saveExpense()">Зберегти витрату</button>
+  `;
+}
+function updateExpenseTotal(){
+  const price = Number(document.getElementById('x_price').value)||0;
+  const qty = Number(document.getElementById('x_qty').value)||0;
+  document.getElementById('x_total').textContent = money(price*qty);
+}
+function saveExpense(){
+  const shop = document.getElementById('x_shop').value.trim();
+  const price = Number(document.getElementById('x_price').value)||0;
+  const qty = Number(document.getElementById('x_qty').value)||1;
+  if(!shop){ toast('Вкажіть магазин'); return; }
+  state.expenses.push({ id:uid(), shop, price, qty, total: price*qty, date: document.getElementById('x_date').value||todayISO() });
+  persist('expenses'); haptic('medium'); toast('Витрату додано'); nav.tab='expenses'; go('expenses');
+}
+
+/* ================= СТАТИСТИКА ================= */
+let statsPeriod = 'month';
+function renderStats(){
+  const today = new Date();
+  let from, to;
+  if(statsPeriod==='month'){ from = new Date(today.getFullYear(), today.getMonth(), 1); to = new Date(today.getFullYear(), today.getMonth()+1, 0); }
+  else if(statsPeriod==='year'){ from = new Date(today.getFullYear(), 0, 1); to = new Date(today.getFullYear(), 11, 31); }
+  else { from = window.__statsFrom ? new Date(window.__statsFrom) : new Date(today.getFullYear(), today.getMonth(), 1); to = window.__statsTo ? new Date(window.__statsTo) : today; }
+  const fromISO = from.toISOString().slice(0,10), toISO = to.toISOString().slice(0,10);
+  const recs = state.records.filter(r=> r.date>=fromISO && r.date<=toISO);
+  const exps = state.expenses.filter(e=> e.date>=fromISO && e.date<=toISO);
+  const gross = recs.reduce((s,r)=>s+Number(r.price||0),0);
+  const exp = exps.reduce((s,e)=>s+Number(e.total||0),0);
+  const events = [
+    ...recs.map(r=>({type:'income', date:r.date, title:r.fio||'Запис', amount:Number(r.price||0)})),
+    ...exps.map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', amount:Number(e.total||0)}))
+  ].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+  return `
+    <div class="seg">
+      <button class="${statsPeriod==='month'?'active':''}" onclick="statsPeriod='month'; render()">Місяць</button>
+      <button class="${statsPeriod==='year'?'active':''}" onclick="statsPeriod='year'; render()">Рік</button>
+      <button class="${statsPeriod==='custom'?'active':''}" onclick="statsPeriod='custom'; render()">Період</button>
+    </div>
+    ${statsPeriod==='custom' ? `
+      <div class="card">
+        <label>З</label><input type="date" value="${window.__statsFrom||fromISO}" onchange="window.__statsFrom=this.value; render()">
+        <label>По</label><input type="date" value="${window.__statsTo||toISO}" onchange="window.__statsTo=this.value; render()">
+      </div>` : ''}
+    <div class="stat-grid">
+      <div class="card stat-card"><p class="stat-label">Дохід</p><p class="stat-value pos">${money(gross)}</p></div>
+      <div class="card stat-card"><p class="stat-label">Витрата</p><p class="stat-value neg">${money(exp)}</p></div>
+    </div>
+    <div class="card stat-card"><p class="stat-label">Чистий прибуток</p><p class="stat-value ${gross-exp>=0?'pos':'neg'}">${money(gross-exp)}</p></div>
+
+    <p class="section-heading">Історія за період</p>
+    ${events.length ? `<div class="card list-card">${events.map(ev=>`
+      <div class="row">
+        <div><div class="list-title">${esc(ev.title)}</div><div class="list-sub">${fmtDate(ev.date)}</div></div>
+        <div class="amount ${ev.type==='income'?'income':'expense'}">${ev.type==='income'?'+':'−'}${money(ev.amount)}</div>
+      </div>`).join('')}</div>` : `<div class="card"><p class="about-p" style="margin:0;">Немає операцій за цей період</p></div>`}
+  `;
+}
+
+/* ================= НАЛАШТУВАННЯ ================= */
+const ACCENTS = ['#2F5FDE','#1E9E6B','#D6455A','#9B59D0','#E08A2D','#14848C'];
+function renderSettings(){
+  const s = state.settings;
+  return `
+    <p class="section-heading">Персоналізація</p>
+    <div class="card">
+      <div class="toggle-row">
+        <span>Темна тема</span>
+        <label class="switch"><input type="checkbox" ${s.theme==='dark'?'checked':''} onchange="setThemeDark(this.checked)"><span class="slider"></span></label>
+      </div>
+      <div style="padding:4px 4px 8px;">
+        <div style="font-size:13px; color:var(--ink-soft); font-weight:600; margin-bottom:10px;">Акцентний колір</div>
+        <div class="swatch-row">
+          ${ACCENTS.map(c=>`<div class="swatch ${s.accent===c?'selected':''}" style="background:${c}" onclick="setAccent('${c}')"></div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <p class="section-heading">Автоскидки</p>
+    <div class="card">
+      <label>Знижка на кожне ${VISIT_EVERY}-те відвідування, %</label>
+      <input type="number" inputmode="decimal" min="0" max="100" value="${s.discountVisit||0}" onchange="setDiscount('discountVisit', this)">
+      <label>Знижка на день народження (± ${BDAY_WINDOW} дні), %</label>
+      <input type="number" inputmode="decimal" min="0" max="100" value="${s.discountBirthday||0}" onchange="setDiscount('discountBirthday', this)">
+      <p class="about-p" style="margin:12px 0 0;">0 — знижку вимкнено. Застосовується автоматично під час додавання запису для клієнтів зі списку. Якщо діють обидві знижки одразу, береться більша.</p>
+    </div>
+
+    <p class="section-heading">Про програму</p>
+    <div class="card">
+      <p class="about-p"><strong style="color:var(--ink)">Облік клієнтів і фінансів</strong><br>Версія 1.2</p>
+      <p class="about-p">Застосунок для обліку клієнтів, записів і витрат малого бізнесу. Дані автоматично зберігаються ${hasCloud ? 'в хмарі Telegram і доступні на будь-якому вашому пристрої, де відкрито цього бота.' : 'локально в цьому браузері (хмарне збереження Telegram недоступне поза застосунком Telegram).'}</p>
+    </div>
+  `;
+}
+function setThemeDark(on){ state.settings.theme = on ? 'dark' : 'system'; persist('settings'); applyTheme(); render(); }
+function setDiscount(key, el){
+  const v = Math.min(100, Math.max(0, Number(el.value)||0));
+  el.value = v; state.settings[key] = v; persist('settings'); toast('Збережено');
+}
+function setAccent(c){ state.settings.accent = c; persist('settings'); applyTheme(); render(); }
+
+/* ================= допоміжне ================= */
+function emptyState(icon, title, sub){
+  return `<div class="empty"><div class="big">${icon}</div><div style="font-weight:700; color:var(--ink); margin-bottom:4px;">${title}</div><div>${sub}</div></div>`;
+}
+
+window.setTab = setTab; window.go = go; window.goBack = goBack;
+
+/* boot */
+bootData();
+</script>
+</body>
+</html>
