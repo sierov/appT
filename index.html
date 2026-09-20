@@ -59,6 +59,16 @@
   .section-heading{font-size:13px; font-weight:700; text-transform:none; color:var(--ink-soft); margin:22px 2px 10px;}
   .row{display:flex; align-items:center; justify-content:space-between; padding:12px 4px; border-bottom:1px solid var(--line);}
   .row:last-child{border-bottom:none;}
+  .modal-back{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; padding:18px;}
+  .modal{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; width:100%; max-width:340px; box-shadow:0 14px 40px rgba(0,0,0,.3);}
+  .modal-text{font-size:15px; font-weight:600; line-height:1.45; margin-bottom:16px; color:var(--ink);}
+  .modal-actions{display:flex; gap:10px;}
+  .modal-actions .btn{flex:1; padding:12px 8px;}
+  .btn.danger-fill{background:var(--expense); color:#fff;}
+  .row.tap{cursor:pointer; border-radius:10px; gap:10px;}
+  .row.tap:active{background:var(--surface-2);}
+  .row-end{display:flex; align-items:center; gap:8px; flex:none;}
+  .row-end .chev{color:var(--ink-soft); font-size:18px; line-height:1;}
   .list-card{padding:4px 12px;}
   .list-title{font-weight:700; font-size:15px;}
   .list-sub{font-size:13px; color:var(--ink-soft); margin-top:2px;}
@@ -214,9 +224,14 @@ async function bootData(){
     cloudLoad('clients', []), cloudLoad('records', []), cloudLoad('expenses', []), cloudLoad('settings', {})
   ]);
   state = {clients, records, expenses, settings};
+  if(state.records.some(r=>!r.id)){ state.records.forEach(r=>{ if(!r.id) r.id = uid(); }); persist('records'); }
+  if(state.expenses.some(e=>!e.id)){ state.expenses.forEach(e=>{ if(!e.id) e.id = uid(); }); persist('expenses'); }
   applyTheme(); render();
 }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+/* сортування: найновіші дати вгорі; при однаковій даті — той, що доданий пізніше, вище */
+function byDateDesc(a,b){ const x=a.date||'', y=b.date||''; return x<y ? 1 : x>y ? -1 : 0; }
+function newestFirst(list){ return [...list].reverse().sort(byDateDesc); }
 
 /* ---------- theme ---------- */
 function applyTheme(){
@@ -238,6 +253,19 @@ function monthKey(iso){ return (iso||'').slice(0,7); }
 function initials(name){ if(!name) return '?'; const parts = name.trim().split(/\s+/); return ((parts[0]?.[0]||'') + (parts[1]?.[0]||'')).toUpperCase() || '?'; }
 let toastTimer;
 function toast(msg){ const el = document.getElementById('toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(()=>el.classList.remove('show'), 2200); }
+/* власне вікно підтвердження: window.confirm() у Telegram часто блокується */
+function askConfirm(text, okLabel, onYes){
+  const old = document.getElementById('confirmModal'); if(old) old.remove();
+  const el = document.createElement('div'); el.id = 'confirmModal'; el.className = 'modal-back';
+  el.innerHTML = `<div class="modal"><div class="modal-text">${esc(text)}</div>
+    <div class="modal-actions"><button class="btn secondary" data-a="no">Скасувати</button><button class="btn danger-fill" data-a="yes">${esc(okLabel)}</button></div></div>`;
+  el.addEventListener('click', e=>{
+    const a = e.target.closest('[data-a]');
+    if(a){ el.remove(); if(a.dataset.a==='yes') onYes(); }
+    else if(e.target===el) el.remove();
+  });
+  document.body.appendChild(el);
+}
 function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- автознижки ---------- */
@@ -314,7 +342,7 @@ function render(){
   const app = document.getElementById('app');
   const titles = {
     home:'Головний екран', clients:'Клієнти', clientAdd:'Новий клієнт', clientProfile:'Профіль',
-    records:'Записи', recordAdd:'Новий запис', expenses:'Витрати', expenseAdd:'Нова витрата',
+    records:'Записи', recordAdd:'Новий запис', recordEdit:'Редагування запису', expenses:'Витрати', expenseAdd:'Нова витрата', expenseEdit:'Редагування витрати',
     stats:'Статистика', settings:'Налаштування'
   };
   const showBack = !['home','clients','records','expenses','stats','settings'].includes(nav.view);
@@ -338,11 +366,11 @@ function render(){
   `;
   const views = {
     home: renderHome, clients: renderClients, clientAdd: renderClientAdd, clientProfile: renderClientProfile,
-    records: renderRecords, recordAdd: renderRecordAdd, expenses: renderExpenses, expenseAdd: renderExpenseAdd,
+    records: renderRecords, recordAdd: renderRecordAdd, recordEdit: renderRecordEdit, expenses: renderExpenses, expenseAdd: renderExpenseAdd, expenseEdit: renderExpenseEdit,
     stats: renderStats, settings: renderSettings
   };
   document.getElementById('main').innerHTML = (views[nav.view]||renderHome)();
-  if(nav.view==='recordAdd') updateRecordDiscount();
+  if(nav.view==='recordAdd' || nav.view==='recordEdit') updateRecordDiscount();
   const topbar = document.getElementById('topbar');
   window.onscroll = ()=>{ topbar.classList.toggle('scrolled', window.scrollY > 4); };
 
@@ -354,6 +382,8 @@ function render(){
   }
 }
 function goBack(){
+  if(nav.view==='recordEdit'){ leaveRecordEdit(); return; }
+  if(nav.view==='expenseEdit'){ leaveExpenseEdit(); return; }
   if(nav.view==='clientProfile' && nav.params.edit){ go('clientProfile',{id:nav.params.id}); return; }
   const target = nav.tab==='clientProfile' ? 'home' : nav.tab;
   go(target, {});
@@ -377,8 +407,8 @@ function renderHome(){
   const exp = state.expenses.filter(e=>monthKey(e.date)===mk).reduce((s,e)=>s+Number(e.total||0),0);
   const net = gross - exp;
   const events = [
-    ...state.records.map(r=>({type:'income', date:r.date, title:r.fio||'Запис', sub:'Запис'+discTag(r), amount:Number(r.price||0)})),
-    ...state.expenses.map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', sub:'Витрата · '+ (e.qty||1)+' шт.', amount:Number(e.total||0)}))
+    ...[...state.records].reverse().map(r=>({type:'income', date:r.date, title:r.fio||'Запис', sub:'Запис'+discTag(r), amount:Number(r.price||0)})),
+    ...[...state.expenses].reverse().map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', sub:'Витрата · '+ (e.qty||1)+' шт.', amount:Number(e.total||0)}))
   ].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
 
   return `
@@ -437,7 +467,7 @@ function renderClientProfile(){
   const c = state.clients.find(x=>x.id===nav.params.id);
   if(!c) return emptyState('☺','Клієнта не знайдено','');
   const editing = nav.params.edit;
-  const clientRecords = recordsOfClient(c).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const clientRecords = newestFirst(recordsOfClient(c));
 
   const dcfg = discountSettings();
   const nextVisit = (Math.floor(clientRecords.length / VISIT_EVERY) + 1) * VISIT_EVERY;
@@ -478,7 +508,7 @@ function renderClientProfile(){
 
     <p class="section-heading">Історія записів</p>
     ${clientRecords.length ? `<div class="card list-card">${clientRecords.map(r=>`
-      <div class="row"><div><div class="list-title">${fmtDate(r.date)}</div>${r.discountPct ? `<div class="list-sub">Знижка −${r.discountPct}% · без знижки ${money(r.basePrice)}</div>` : ''}</div><div class="amount income">${money(r.price)}</div></div>
+      <div class="row tap" onclick="go('recordEdit',{id:'${r.id}', fromClient:'${c.id}'})"><div><div class="list-title">${fmtDate(r.date)}</div>${r.discountPct ? `<div class="list-sub">Знижка −${r.discountPct}% · без знижки ${money(r.basePrice)}</div>` : ''}</div><div class="row-end"><div class="amount income">${money(r.price)}</div><span class="chev">›</span></div></div>
     `).join('')}</div>` : `<div class="card"><p class="about-p" style="margin:0;">Записів поки немає</p></div>`}
   `;
 }
@@ -491,19 +521,20 @@ function saveClientEdit(id){
   persist('clients'); toast('Профіль оновлено'); go('clientProfile',{id});
 }
 function deleteClient(id){
-  if(!confirm('Видалити клієнта без можливості відновлення?')) return;
-  state.clients = state.clients.filter(x=>x.id!==id); persist('clients');
-  toast('Клієнта видалено'); nav.tab='clients'; go('clients');
+  askConfirm('Видалити клієнта? Цю дію не можна скасувати.', 'Видалити', ()=>{
+    state.clients = state.clients.filter(x=>x.id!==id); persist('clients');
+    toast('Клієнта видалено'); nav.tab='clients'; go('clients');
+  });
 }
 
 /* ================= ЗАПИСИ ================= */
 function renderRecords(){
-  const list = [...state.records].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const list = newestFirst(state.records);
   if(!list.length) return emptyState('▤','Записів поки немає','Натисніть «+», щоб додати запис');
   return `<div class="card list-card">${list.map(r=>`
-    <div class="row">
+    <div class="row tap" onclick="go('recordEdit',{id:'${r.id}'})">
       <div><div class="list-title">${esc(r.fio)||'Без імені'}</div><div class="list-sub">${esc(r.phone)||'—'} · ${fmtDate(r.date)}${discTag(r)}</div></div>
-      <div class="amount income">${money(r.price)}</div>
+      <div class="row-end"><div class="amount income">${money(r.price)}</div><span class="chev">›</span></div>
     </div>`).join('')}</div>`;
 }
 let recordDiscountOff = false;
@@ -517,6 +548,7 @@ function recordFormDiscount(){
 }
 function updateRecordDiscount(){
   const box = document.getElementById('r_discount'); if(!box) return;
+  if(nav.view==='recordEdit'){ updateEditDiscount(box); return; }
   const { client, d } = recordFormDiscount();
   if(!d.pct){ box.innerHTML = ''; return; }
   const base = Number(document.getElementById('r_price').value) || 0;
@@ -614,14 +646,85 @@ function saveRecord(clientId){
   if(clientId && !(client && client.id!==clientId)) go('clientProfile',{id:clientId}); else { nav.tab='records'; go('records'); }
 }
 
+/* --- редагування та видалення запису --- */
+function renderRecordEdit(){
+  const r = state.records.find(x=>x.id===nav.params.id);
+  if(!r) return emptyState('▤','Запис не знайдено','Можливо, його вже видалено');
+  recordDiscountOff = false;
+  recordSelectedClient = r.clientId || null;
+  const base = (r.discountPct && r.basePrice!=null) ? r.basePrice : r.price;
+  return `
+    <div class="card">
+      <label>ПІБ</label>
+      <div class="combo">
+        <input type="text" id="r_fio" autocomplete="off" value="${esc(r.fio)}" placeholder="Оберіть клієнта або введіть ПІБ"
+               onfocus="renderClientPicker()" oninput="onFioInput()" onblur="fioBlur()">
+        <div class="picker" id="r_picker" hidden onmousedown="event.preventDefault()"></div>
+      </div>
+      <label>Номер телефону</label>
+      <input type="tel" id="r_phone" value="${esc(r.phone)}" placeholder="+380 00 000 00 00">
+      <label>Дата запису</label>
+      <input type="date" id="r_date" value="${r.date||todayISO()}">
+      <label>Ціна</label>
+      <input type="number" id="r_price" inputmode="decimal" value="${base||''}" placeholder="0" oninput="updateRecordDiscount()">
+      <div id="r_discount"></div>
+    </div>
+    <button class="btn" onclick="saveRecordEdit('${r.id}')">Зберегти зміни</button>
+    <button class="btn danger" style="margin-top:10px" onclick="deleteRecord('${r.id}')">Видалити запис</button>
+  `;
+}
+// знижка, що вже була в записі, зберігається; її можна вимкнути перемикачем
+function updateEditDiscount(box){
+  const r = state.records.find(x=>x.id===nav.params.id);
+  if(!r || !r.discountPct){ box.innerHTML = ''; return; }
+  const base = Number(document.getElementById('r_price').value) || 0;
+  const on = !recordDiscountOff;
+  const why = r.discountReason==='birthday' ? 'День народження' : r.discountReason==='visit' ? 'Знижка за візит' : 'Знижка';
+  box.innerHTML = `
+    <div class="discount-box">
+      <div class="toggle-row">
+        <div><div class="list-title">Знижка −${r.discountPct}%</div><div class="list-sub">${why}</div></div>
+        <label class="switch"><input type="checkbox" ${on?'checked':''} onchange="toggleRecordDiscount(this.checked)"><span class="slider"></span></label>
+      </div>
+      <div class="divider-total"><span>До сплати</span><span class="v">${money(on ? applyPct(base, r.discountPct) : base)}</span></div>
+    </div>`;
+}
+function leaveRecordEdit(){
+  const cid = nav.params.fromClient;
+  if(cid && state.clients.some(c=>c.id===cid)) go('clientProfile',{id:cid});
+  else { nav.tab = 'records'; go('records'); }
+}
+function saveRecordEdit(id){
+  const r = state.records.find(x=>x.id===id); if(!r){ leaveRecordEdit(); return; }
+  const fio = document.getElementById('r_fio').value.trim();
+  if(!fio){ toast('Вкажіть ПІБ'); return; }
+  const phone = document.getElementById('r_phone').value.trim();
+  const price = Number(document.getElementById('r_price').value)||0;
+  const date = document.getElementById('r_date').value || r.date || todayISO();
+  const client = findClientFor(fio, phone, recordSelectedClient);
+  r.fio = fio; r.phone = phone; r.date = date; r.clientId = client ? client.id : null;
+  if(r.discountPct && !recordDiscountOff){
+    r.basePrice = price; r.price = applyPct(price, r.discountPct);
+  } else {
+    r.price = price; delete r.basePrice; delete r.discountPct; delete r.discountReason;
+  }
+  persist('records'); haptic('medium'); toast('Запис оновлено'); leaveRecordEdit();
+}
+function deleteRecord(id){
+  askConfirm('Видалити запис? Цю дію не можна скасувати.', 'Видалити', ()=>{
+    state.records = state.records.filter(x=>x.id!==id); persist('records');
+    haptic('medium'); toast('Запис видалено'); leaveRecordEdit();
+  });
+}
+
 /* ================= ВИТРАТИ ================= */
 function renderExpenses(){
-  const list = [...state.expenses].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const list = newestFirst(state.expenses);
   if(!list.length) return emptyState('◈','Витрат поки немає','Натисніть «+», щоб додати витрату');
   return `<div class="card list-card">${list.map(e=>`
-    <div class="row">
+    <div class="row tap" onclick="go('expenseEdit',{id:'${e.id}'})">
       <div><div class="list-title">${esc(e.shop)||'Магазин'}</div><div class="list-sub">${e.qty||1} шт. · ${fmtDate(e.date)}</div></div>
-      <div class="amount expense">${money(e.total)}</div>
+      <div class="row-end"><div class="amount expense">${money(e.total)}</div><span class="chev">›</span></div>
     </div>`).join('')}</div>`;
 }
 function renderExpenseAdd(){
@@ -654,6 +757,47 @@ function saveExpense(){
   persist('expenses'); haptic('medium'); toast('Витрату додано'); nav.tab='expenses'; go('expenses');
 }
 
+/* --- редагування та видалення витрати --- */
+function renderExpenseEdit(){
+  const e = state.expenses.find(x=>x.id===nav.params.id);
+  if(!e) return emptyState('◈','Витрату не знайдено','Можливо, її вже видалено');
+  const qty = e.qty || 1;
+  const rawPrice = e.price!=null ? Number(e.price) : (Number(e.total)||0) / qty;
+  const price = Math.round(rawPrice*100)/100;
+  return `
+    <div class="card">
+      <label>Магазин</label>
+      <input type="text" id="x_shop" value="${esc(e.shop)}" placeholder="Назва магазину">
+      <label>Ціна за одиницю</label>
+      <input type="number" id="x_price" inputmode="decimal" value="${price||''}" placeholder="0" oninput="updateExpenseTotal()">
+      <label>Кількість</label>
+      <input type="number" id="x_qty" inputmode="decimal" value="${qty}" oninput="updateExpenseTotal()">
+      <label>Дата</label>
+      <input type="date" id="x_date" value="${e.date||todayISO()}">
+      <div class="divider-total"><span>Підсумкова сума</span><span class="v" id="x_total">${money(e.total)}</span></div>
+    </div>
+    <button class="btn" onclick="saveExpenseEdit('${e.id}')">Зберегти зміни</button>
+    <button class="btn danger" style="margin-top:10px" onclick="deleteExpense('${e.id}')">Видалити витрату</button>
+  `;
+}
+function leaveExpenseEdit(){ nav.tab = 'expenses'; go('expenses'); }
+function saveExpenseEdit(id){
+  const e = state.expenses.find(x=>x.id===id); if(!e){ leaveExpenseEdit(); return; }
+  const shop = document.getElementById('x_shop').value.trim();
+  if(!shop){ toast('Вкажіть магазин'); return; }
+  const price = Number(document.getElementById('x_price').value)||0;
+  const qty = Number(document.getElementById('x_qty').value)||1;
+  e.shop = shop; e.price = price; e.qty = qty; e.total = price*qty;
+  e.date = document.getElementById('x_date').value || e.date || todayISO();
+  persist('expenses'); haptic('medium'); toast('Витрату оновлено'); leaveExpenseEdit();
+}
+function deleteExpense(id){
+  askConfirm('Видалити витрату? Цю дію не можна скасувати.', 'Видалити', ()=>{
+    state.expenses = state.expenses.filter(x=>x.id!==id); persist('expenses');
+    haptic('medium'); toast('Витрату видалено'); leaveExpenseEdit();
+  });
+}
+
 /* ================= СТАТИСТИКА ================= */
 let statsPeriod = 'month';
 function renderStats(){
@@ -668,8 +812,8 @@ function renderStats(){
   const gross = recs.reduce((s,r)=>s+Number(r.price||0),0);
   const exp = exps.reduce((s,e)=>s+Number(e.total||0),0);
   const events = [
-    ...recs.map(r=>({type:'income', date:r.date, title:r.fio||'Запис', amount:Number(r.price||0)})),
-    ...exps.map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', amount:Number(e.total||0)}))
+    ...[...recs].reverse().map(r=>({type:'income', date:r.date, title:r.fio||'Запис', amount:Number(r.price||0)})),
+    ...[...exps].reverse().map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', amount:Number(e.total||0)}))
   ].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
   return `
