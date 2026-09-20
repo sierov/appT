@@ -529,14 +529,21 @@ function deleteClient(id){
 
 /* ================= ЗАПИСИ ================= */
 function renderRecords(){
+  const oldFirst = state.settings.recordsSort === 'old';
   const list = newestFirst(state.records);
+  if(oldFirst) list.reverse();
   if(!list.length) return emptyState('▤','Записів поки немає','Натисніть «+», щоб додати запис');
-  return `<div class="card list-card">${list.map(r=>`
+  return `<div class="seg">
+      <button class="${!oldFirst?'active':''}" onclick="setRecordsSort('new')">Спочатку нові</button>
+      <button class="${oldFirst?'active':''}" onclick="setRecordsSort('old')">Спочатку старі</button>
+    </div>
+    <div class="card list-card">${list.map(r=>`
     <div class="row tap" onclick="go('recordEdit',{id:'${r.id}'})">
       <div><div class="list-title">${esc(r.fio)||'Без імені'}</div><div class="list-sub">${esc(r.phone)||'—'} · ${fmtDate(r.date)}${discTag(r)}</div></div>
       <div class="row-end"><div class="amount income">${money(r.price)}</div><span class="chev">›</span></div>
     </div>`).join('')}</div>`;
 }
+function setRecordsSort(mode){ state.settings.recordsSort = mode; persist('settings'); haptic('light'); render(); }
 let recordDiscountOff = false;
 let recordSelectedClient = null;
 function recordFormDiscount(){
