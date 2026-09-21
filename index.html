@@ -408,7 +408,7 @@ function renderHome(){
   const net = gross - exp;
   const events = [
     ...[...state.records].reverse().map(r=>({type:'income', date:r.date, title:r.fio||'Запис', sub:'Запис'+discTag(r), amount:Number(r.price||0)})),
-    ...[...state.expenses].reverse().map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', sub:'Витрата · '+ (e.qty||1)+' шт.', amount:Number(e.total||0)}))
+    ...[...state.expenses].reverse().map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', sub:'Витрата'+(e.item ? ' · '+esc(e.item) : '')+' · '+(e.qty||1)+' шт.', amount:Number(e.total||0)}))
   ].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
 
   return `
@@ -730,7 +730,7 @@ function renderExpenses(){
   if(!list.length) return emptyState('◈','Витрат поки немає','Натисніть «+», щоб додати витрату');
   return `<div class="card list-card">${list.map(e=>`
     <div class="row tap" onclick="go('expenseEdit',{id:'${e.id}'})">
-      <div><div class="list-title">${esc(e.shop)||'Магазин'}</div><div class="list-sub">${e.qty||1} шт. · ${fmtDate(e.date)}</div></div>
+      <div><div class="list-title">${esc(e.shop)||'Магазин'}</div><div class="list-sub">${e.item ? esc(e.item)+' · ' : ''}${e.qty||1} шт. · ${fmtDate(e.date)}</div></div>
       <div class="row-end"><div class="amount expense">${money(e.total)}</div><span class="chev">›</span></div>
     </div>`).join('')}</div>`;
 }
@@ -739,6 +739,8 @@ function renderExpenseAdd(){
     <div class="card">
       <label>Магазин</label>
       <input type="text" id="x_shop" placeholder="Назва магазину">
+      <label>Що купили</label>
+      <input type="text" id="x_item" placeholder="Наприклад: фарба, рукавички">
       <label>Ціна за одиницю</label>
       <input type="number" id="x_price" inputmode="decimal" placeholder="0" oninput="updateExpenseTotal()">
       <label>Кількість</label>
@@ -760,7 +762,7 @@ function saveExpense(){
   const price = Number(document.getElementById('x_price').value)||0;
   const qty = Number(document.getElementById('x_qty').value)||1;
   if(!shop){ toast('Вкажіть магазин'); return; }
-  state.expenses.push({ id:uid(), shop, price, qty, total: price*qty, date: document.getElementById('x_date').value||todayISO() });
+  state.expenses.push({ id:uid(), shop, item: document.getElementById('x_item').value.trim(), price, qty, total: price*qty, date: document.getElementById('x_date').value||todayISO() });
   persist('expenses'); haptic('medium'); toast('Витрату додано'); nav.tab='expenses'; go('expenses');
 }
 
@@ -775,6 +777,8 @@ function renderExpenseEdit(){
     <div class="card">
       <label>Магазин</label>
       <input type="text" id="x_shop" value="${esc(e.shop)}" placeholder="Назва магазину">
+      <label>Що купили</label>
+      <input type="text" id="x_item" value="${esc(e.item)}" placeholder="Наприклад: фарба, рукавички">
       <label>Ціна за одиницю</label>
       <input type="number" id="x_price" inputmode="decimal" value="${price||''}" placeholder="0" oninput="updateExpenseTotal()">
       <label>Кількість</label>
@@ -794,7 +798,7 @@ function saveExpenseEdit(id){
   if(!shop){ toast('Вкажіть магазин'); return; }
   const price = Number(document.getElementById('x_price').value)||0;
   const qty = Number(document.getElementById('x_qty').value)||1;
-  e.shop = shop; e.price = price; e.qty = qty; e.total = price*qty;
+  e.shop = shop; e.item = document.getElementById('x_item').value.trim(); e.price = price; e.qty = qty; e.total = price*qty;
   e.date = document.getElementById('x_date').value || e.date || todayISO();
   persist('expenses'); haptic('medium'); toast('Витрату оновлено'); leaveExpenseEdit();
 }
@@ -820,7 +824,7 @@ function renderStats(){
   const exp = exps.reduce((s,e)=>s+Number(e.total||0),0);
   const events = [
     ...[...recs].reverse().map(r=>({type:'income', date:r.date, title:r.fio||'Запис', amount:Number(r.price||0)})),
-    ...[...exps].reverse().map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', amount:Number(e.total||0)}))
+    ...[...exps].reverse().map(e=>({type:'expense', date:e.date, title:e.shop||'Витрата', sub:e.item||'', amount:Number(e.total||0)}))
   ].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
   return `
@@ -843,7 +847,7 @@ function renderStats(){
     <p class="section-heading">Історія за період</p>
     ${events.length ? `<div class="card list-card">${events.map(ev=>`
       <div class="row">
-        <div><div class="list-title">${esc(ev.title)}</div><div class="list-sub">${fmtDate(ev.date)}</div></div>
+        <div><div class="list-title">${esc(ev.title)}</div><div class="list-sub">${ev.sub ? esc(ev.sub)+' · ' : ''}${fmtDate(ev.date)}</div></div>
         <div class="amount ${ev.type==='income'?'income':'expense'}">${ev.type==='income'?'+':'−'}${money(ev.amount)}</div>
       </div>`).join('')}</div>` : `<div class="card"><p class="about-p" style="margin:0;">Немає операцій за цей період</p></div>`}
   `;
