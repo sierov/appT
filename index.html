@@ -246,7 +246,9 @@ function setTab(tab){ haptic('light'); nav.tab = tab; go(tab, {}); }
 
 /* ---------- helpers ---------- */
 function money(n){ n = Number(n)||0; return n.toLocaleString('uk-UA', {maximumFractionDigits:0}) + ' ₴'; }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+/* дата за ЛОКАЛЬНИМ часом (toISOString() дає UTC і зсуває дату на день) */
+function isoLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function todayISO(){ return isoLocal(new Date()); }
 function fmtDate(iso){ if(!iso) return '—'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('uk-UA', {day:'numeric', month:'long', year:'numeric'}); }
 function fmtDateShort(iso){ if(!iso) return '—'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('uk-UA', {day:'numeric', month:'short'}); }
 function monthKey(iso){ return (iso||'').slice(0,7); }
@@ -813,11 +815,11 @@ function deleteExpense(id){
 let statsPeriod = 'month';
 function renderStats(){
   const today = new Date();
-  let from, to;
-  if(statsPeriod==='month'){ from = new Date(today.getFullYear(), today.getMonth(), 1); to = new Date(today.getFullYear(), today.getMonth()+1, 0); }
-  else if(statsPeriod==='year'){ from = new Date(today.getFullYear(), 0, 1); to = new Date(today.getFullYear(), 11, 31); }
-  else { from = window.__statsFrom ? new Date(window.__statsFrom) : new Date(today.getFullYear(), today.getMonth(), 1); to = window.__statsTo ? new Date(window.__statsTo) : today; }
-  const fromISO = from.toISOString().slice(0,10), toISO = to.toISOString().slice(0,10);
+  const y = today.getFullYear(), m = today.getMonth();
+  let fromISO, toISO;
+  if(statsPeriod==='month'){ fromISO = isoLocal(new Date(y, m, 1)); toISO = isoLocal(new Date(y, m+1, 0)); }
+  else if(statsPeriod==='year'){ fromISO = isoLocal(new Date(y, 0, 1)); toISO = isoLocal(new Date(y, 11, 31)); }
+  else { fromISO = window.__statsFrom || isoLocal(new Date(y, m, 1)); toISO = window.__statsTo || isoLocal(today); }
   const recs = state.records.filter(r=> r.date>=fromISO && r.date<=toISO);
   const exps = state.expenses.filter(e=> e.date>=fromISO && e.date<=toISO);
   const gross = recs.reduce((s,r)=>s+Number(r.price||0),0);
